@@ -156,7 +156,7 @@ function calculateBOM(court) {
 
 function LandingScreen({ onChoice }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-blue-50 flex items-center justify-center p-4">
+    <div className="bg-gradient-to-br from-slate-100 via-white to-blue-50 flex items-center justify-center p-4 overflow-auto" style={{ minHeight: "100dvh" }}>
       <div className="max-w-lg w-full">
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 mb-5 shadow-lg shadow-blue-200">
@@ -224,7 +224,7 @@ function SetupForm({ onGenerate, onBack }) {
   const [touched, setTouched] = useState({ width: false, length: false });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-blue-50 flex items-center justify-center p-4">
+    <div className="bg-gradient-to-br from-slate-100 via-white to-blue-50 flex items-center justify-center p-4 overflow-auto" style={{ minHeight: "100dvh" }}>
       <div className="max-w-md w-full">
         <button onClick={onBack} className="flex items-center gap-1 text-gray-500 hover:text-gray-700 mb-6 text-sm">
           <svg width="16" height="16" viewBox="0 0 16 16"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="2" fill="none" /></svg>
@@ -305,7 +305,7 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onUpdat
     const currentHeight = panelSections.length > 0 ? panelSections[0].height : 1;
 
     return (
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-5 w-72">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-4 w-72 max-w-[calc(100vw-2rem)]">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-gray-900">{wallLabel}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
@@ -331,7 +331,7 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onUpdat
     const section = wall.sections[selection.index];
     if (!section || section.type === "goal" || section.type === "curvedCorner") {
       return (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-5 w-72">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-4 w-72 max-w-[calc(100vw-2rem)]">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-bold text-gray-900">
               {section?.type === "goal" ? "Goal Combo" : "Curved Corner"}
@@ -356,7 +356,7 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onUpdat
     const maxHeight = isAdjacentToGoal ? 3 : 4;
 
     return (
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-5 w-72">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-4 w-72 max-w-[calc(100vw-2rem)]">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-gray-900">
             {section.type === "gate" ? "Gate" : "Panel"} — {section.width}m wide
@@ -1257,30 +1257,32 @@ function Configurator({ court, setCourt, onBack }) {
   const tabs = [{ id: "2d", label: "2D Plan" }, { id: "3d", label: "3D View" }, { id: "bom", label: "BOM" }];
 
   return (
-    <div className="h-screen flex flex-col bg-white">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 bg-white flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors">
+    <div className="flex flex-col bg-white" style={{ height: "100dvh" }}>
+      {/* Header - always visible */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-white flex-shrink-0 z-30">
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={onBack} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0">
             <svg width="20" height="20" viewBox="0 0 20 20"><path d="M12 5L7 10l5 5" stroke="currentColor" strokeWidth="2" fill="none" /></svg>
           </button>
-          <div>
-            <h1 className="text-sm font-bold text-gray-900">Arena Configurator</h1>
-            <p className="text-xs text-gray-400">
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold text-gray-900 truncate">Arena Configurator</h1>
+            <p className="text-xs text-gray-400 truncate">
               {court.isEndWallOnly ? `End wall · ${court.width}m wide` : `${court.width}m × ${court.length}m · ${court.cornerType === "curved" ? "curved" : "90°"} corners`}
             </p>
           </div>
         </div>
-        <div className="flex gap-0.5 bg-gray-100 rounded-xl p-1">
+        <div className="flex gap-0.5 bg-gray-100 rounded-xl p-0.5 flex-shrink-0 ml-2">
           {tabs.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
                 activeTab === tab.id ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
               }`}>{tab.label}</button>
           ))}
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden relative">
+      {/* Content - fills remaining space */}
+      <div className="flex-1 min-h-0 flex overflow-hidden relative">
         <div className="flex-1 overflow-hidden" onClick={clearSelection}>
           {activeTab === "2d" && <PlanView2D court={court} selection={selection} onSelectSection={onSelectSection} onSelectWall={onSelectWall} />}
           {activeTab === "3d" && <IsometricView court={court} selection={selection} onSelectSection={onSelectSection} onSelectWall={onSelectWall} />}
@@ -1288,7 +1290,7 @@ function Configurator({ court, setCourt, onBack }) {
         </div>
 
         {selection && activeTab !== "bom" && (
-          <div className="absolute bottom-4 right-4 z-20">
+          <div className="absolute bottom-3 right-3 left-3 sm:left-auto z-20 flex justify-center sm:justify-end">
             <SectionEditor court={court} selection={selection}
               onUpdateHeight={updateSectionHeight} onToggleGate={toggleGate}
               onUpdateWallHeight={updateWallHeight} onClose={clearSelection} />
@@ -1296,7 +1298,7 @@ function Configurator({ court, setCourt, onBack }) {
         )}
 
         {court.isEndWallOnly && activeTab === "2d" && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-8 bg-white rounded-2xl border border-gray-200 shadow-xl px-6 py-3">
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4 sm:gap-8 bg-white rounded-2xl border border-gray-200 shadow-xl px-4 sm:px-6 py-2.5">
             {!leftHasCorner ? (
               <EndWallAddPanel side="left" adjacentToGoal={isLeftAdjacentToGoal}
                 onAdd={(w, h) => addPanel("left", w, h)} onAddCorner={(h) => addCurvedCorner("left", h)} />
@@ -1319,7 +1321,7 @@ function Configurator({ court, setCourt, onBack }) {
       </div>
 
       {activeTab !== "bom" && (
-        <div className="flex items-center justify-center gap-5 px-4 py-2 border-t border-gray-100 bg-white flex-shrink-0">
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-3 py-1.5 border-t border-gray-100 bg-white flex-shrink-0">
           <span className="text-xs text-gray-400 font-medium">Panels:</span>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: PANEL_BLUE }} />
