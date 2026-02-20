@@ -798,6 +798,15 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
           <PostCircle cx={W * SCALE} cy={L * SCALE} scale={SCALE} isCorner={true} />
         </>
       )}
+      {/* Posts at curved corner / side wall junctions */}
+      {court.cornerType === "curved" && (
+        <>
+          <PostCircle cx={-T / 2} cy={cornerOff} scale={SCALE} />
+          <PostCircle cx={W * SCALE + T / 2} cy={cornerOff} scale={SCALE} />
+          <PostCircle cx={-T / 2} cy={L * SCALE - cornerOff} scale={SCALE} />
+          <PostCircle cx={W * SCALE + T / 2} cy={L * SCALE - cornerOff} scale={SCALE} />
+        </>
+      )}
     </svg>
   );
 }
@@ -1069,6 +1078,33 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
     const cfg = wallConfigs[wId];
     renderIso3DWall(wId, cfg.fn, cfg.shade);
   });
+
+  // 3D Posts at curved corner / side wall junctions
+  if (court.cornerType === "curved") {
+    const junctions = [
+      { x: 0, y: cornerOff }, { x: W, y: cornerOff },
+      { x: 0, y: L - cornerOff }, { x: W, y: L - cornerOff },
+    ];
+    const sideH1 = court.walls.side1?.sections[0]?.height || 3;
+    const sideH2 = court.walls.side2?.sections[0]?.height || 3;
+    const endCurveH = court.walls.end1?.sections[0]?.height || 3;
+    const junctionHeights = [
+      Math.max(sideH1, endCurveH), Math.max(sideH2, endCurveH),
+      Math.max(sideH1, endCurveH), Math.max(sideH2, endCurveH),
+    ];
+    junctions.forEach((j, i) => {
+      const pb = toIso(j.x, j.y, 0);
+      const pt = toIso(j.x, j.y, junctionHeights[i]);
+      elems.push(
+        <line key={`cj-post-${i}`} x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y}
+          stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />
+      );
+      elems.push(
+        <circle key={`cj-post-${i}-t`} cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)}
+          fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />
+      );
+    });
+  }
 
   return (
     <div className="w-full h-full relative" style={{ background: "#f1f5f9" }}>
