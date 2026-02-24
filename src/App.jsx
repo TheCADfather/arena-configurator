@@ -3,6 +3,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 // ─── Constants ───────────────────────────────────────────────────────────────
 const GOAL_WIDTH = 3;
 const CURVED_CORNER_SIZE = 0.5;
+const CHICANE_OFFSET = 1.3;
 const PANEL_BLUE = "#2952c4";
 const PANEL_BLUE_LIGHT = "#3b6de8";
 const PANEL_BLUE_DARK = "#1e3fa0";
@@ -11,6 +12,7 @@ const POST_GREY = "#b0b8c4";
 const POST_GREY_DARK = "#8a929e";
 const GOAL_FRAME_GREY = "#c0c8d0";
 const GATE_GREY = "#a0a8b4";
+const MINIGOAL_WHITE = "#f0f0f0";
 const SELECTED_OUTLINE = "#fbbf24";
 const COURT_SURFACE = "#4a4e54";
 const COURT_LINES = "#5ba4d9";
@@ -29,37 +31,70 @@ function generatePanelRun(totalWidth, height) {
   return sections;
 }
 
-function generateEndWall(courtWidth, endHeight, cornerType) {
+function generateEndWall(courtWidth, endHeight, cornerType, sideHeight = 0) {
   const sections = [];
   const goalAttachMax = 3;
-  const adjacentHeight = endHeight > goalAttachMax ? goalAttachMax : endHeight;
+  const curvedCornerHeight = Math.max(endHeight, sideHeight);
 
   if (cornerType === "curved") {
-    sections.push({ type: "curvedCorner", width: CURVED_CORNER_SIZE, height: Math.min(endHeight, 3) });
+    sections.push({ type: "curvedCorner", width: CURVED_CORNER_SIZE, height: curvedCornerHeight });
     const panelSpace = (courtWidth - GOAL_WIDTH - 2 * CURVED_CORNER_SIZE) / 2;
     const leftPanels = generatePanelRun(panelSpace, endHeight);
-    if (leftPanels.length > 0 && endHeight > goalAttachMax) {
-      leftPanels[leftPanels.length - 1].height = adjacentHeight;
+    // For arches: ensure adjacent-to-goal panel is 2m wide, and add arch info
+    if (leftPanels.length > 0) {
+      const adj = leftPanels[leftPanels.length - 1];
+      if (endHeight === 2 && adj.width === 2) {
+        adj.arch = { baseLevel: 1, goalHeight: 2, outerHeight: 1, goalSide: "right" };
+      } else if (endHeight === 4 && adj.width === 2) {
+        adj.height = endHeight;
+        adj.arch = { baseLevel: 2, goalHeight: 1, outerHeight: 2, goalSide: "right" };
+      } else if (endHeight > goalAttachMax) {
+        adj.height = goalAttachMax;
+      }
     }
     sections.push(...leftPanels);
     sections.push({ type: "goal", width: GOAL_WIDTH, height: goalAttachMax });
     const rightPanels = generatePanelRun(panelSpace, endHeight);
-    if (rightPanels.length > 0 && endHeight > goalAttachMax) {
-      rightPanels[0].height = adjacentHeight;
+    if (rightPanels.length > 0) {
+      const adj = rightPanels[0];
+      if (endHeight === 2 && adj.width === 2) {
+        adj.arch = { baseLevel: 1, goalHeight: 2, outerHeight: 1, goalSide: "left" };
+      } else if (endHeight === 4 && adj.width === 2) {
+        adj.height = endHeight;
+        adj.arch = { baseLevel: 2, goalHeight: 1, outerHeight: 2, goalSide: "left" };
+      } else if (endHeight > goalAttachMax) {
+        adj.height = goalAttachMax;
+      }
     }
     sections.push(...rightPanels);
-    sections.push({ type: "curvedCorner", width: CURVED_CORNER_SIZE, height: Math.min(endHeight, 3) });
+    sections.push({ type: "curvedCorner", width: CURVED_CORNER_SIZE, height: curvedCornerHeight });
   } else {
     const panelSpace = (courtWidth - GOAL_WIDTH) / 2;
     const leftPanels = generatePanelRun(panelSpace, endHeight);
-    if (leftPanels.length > 0 && endHeight > goalAttachMax) {
-      leftPanels[leftPanels.length - 1].height = adjacentHeight;
+    if (leftPanels.length > 0) {
+      const adj = leftPanels[leftPanels.length - 1];
+      if (endHeight === 2 && adj.width === 2) {
+        adj.arch = { baseLevel: 1, goalHeight: 2, outerHeight: 1, goalSide: "right" };
+      } else if (endHeight === 4 && adj.width === 2) {
+        adj.height = endHeight;
+        adj.arch = { baseLevel: 2, goalHeight: 1, outerHeight: 2, goalSide: "right" };
+      } else if (endHeight > goalAttachMax) {
+        adj.height = goalAttachMax;
+      }
     }
     sections.push(...leftPanels);
     sections.push({ type: "goal", width: GOAL_WIDTH, height: goalAttachMax });
     const rightPanels = generatePanelRun(panelSpace, endHeight);
-    if (rightPanels.length > 0 && endHeight > goalAttachMax) {
-      rightPanels[0].height = adjacentHeight;
+    if (rightPanels.length > 0) {
+      const adj = rightPanels[0];
+      if (endHeight === 2 && adj.width === 2) {
+        adj.arch = { baseLevel: 1, goalHeight: 2, outerHeight: 1, goalSide: "left" };
+      } else if (endHeight === 4 && adj.width === 2) {
+        adj.height = endHeight;
+        adj.arch = { baseLevel: 2, goalHeight: 1, outerHeight: 2, goalSide: "left" };
+      } else if (endHeight > goalAttachMax) {
+        adj.height = goalAttachMax;
+      }
     }
     sections.push(...rightPanels);
   }
@@ -78,8 +113,8 @@ function generateCourt(width, length, endHeight, sideHeight) {
   return {
     width, length, cornerType, endHeight, sideHeight,
     walls: {
-      end1: { sections: generateEndWall(width, endHeight, cornerType) },
-      end2: { sections: generateEndWall(width, endHeight, cornerType) },
+      end1: { sections: generateEndWall(width, endHeight, cornerType, sideHeight) },
+      end2: { sections: generateEndWall(width, endHeight, cornerType, sideHeight) },
       side1: { sections: generateSideWall(length, sideHeight, cornerType) },
       side2: { sections: generateSideWall(length, sideHeight, cornerType) },
     },
@@ -109,12 +144,27 @@ function calculateBOM(court) {
       if (section.type === "panel") {
         const w = section.width === 2 ? "2m" : "1m";
         add(`Bar Panel ${w}`, 1);
-        const meshCount = section.height - 1;
-        if (meshCount > 0) add(`Mesh Panel ${w}`, meshCount);
+        if (section.arch) {
+          const meshBelow = section.arch.baseLevel - 1;
+          if (meshBelow > 0) add(`Mesh Panel ${w}`, meshBelow);
+          add(`Arch Panel 2m`, 1);
+        } else {
+          const meshCount = section.height - 1;
+          if (meshCount > 0) add(`Mesh Panel ${w}`, meshCount);
+        }
+      } else if (section.type === "minigoal") {
+        add("Mini Goal 2m", 1);
       } else if (section.type === "gate") {
         const gateH = Math.min(section.height, 2);
         add(`Gate ${gateH}m (in 2m frame)`, 1);
         const meshAbove = section.height - gateH;
+        if (meshAbove > 0) add("Mesh Panel 2m", meshAbove);
+      } else if (section.type === "chicane") {
+        const chicH = Math.min(section.height, 2);
+        add(`Chicane Frame 2m`, 1);
+        add(`Bar Panel 2m`, 2); // 2x 2m rebound panels
+        add(`Post ${chicH}m`, 4); // 2 posts per rebound panel
+        const meshAbove = section.height - chicH;
         if (meshAbove > 0) add("Mesh Panel 2m", meshAbove);
       } else if (section.type === "curvedCorner") {
         add("Curved Corner Bar Panel", 1);
@@ -295,7 +345,7 @@ function SetupForm({ onGenerate, onBack }) {
 }
 
 // ─── Section Editor ──────────────────────────────────────────────────────────
-function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onUpdateWallHeight, onClose }) {
+function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onToggleChicane, onToggleMiniGoal, onUpdateWallHeight, onClose }) {
   if (!selection) return null;
 
   if (selection.type === "wall") {
@@ -329,20 +379,59 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onUpdat
   if (selection.type === "section") {
     const wall = court.walls[selection.wall];
     const section = wall.sections[selection.index];
-    if (!section || section.type === "goal" || section.type === "curvedCorner") {
+    if (!section || section.type === "goal") {
       return (
         <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-4 w-72 max-w-[calc(100vw-2rem)]">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-gray-900">
-              {section?.type === "goal" ? "Goal Combo" : "Curved Corner"}
-            </h3>
+            <h3 className="font-bold text-gray-900">Goal Combo</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
               <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" /></svg>
             </button>
           </div>
-          <p className="text-xs text-gray-500">
-            {section?.type === "goal" ? "SAG2B + SAMBR — fixed 3m width" : "Fixed 0.5m × 0.5m corner piece"}
-          </p>
+          <p className="text-xs text-gray-500">SAG2B + SAMBR — fixed 3m width</p>
+        </div>
+      );
+    }
+
+    if (section.type === "curvedCorner") {
+      return (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-4 w-72 max-w-[calc(100vw-2rem)]">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-gray-900">Curved Corner</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+              <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" /></svg>
+            </button>
+          </div>
+          <div className="mb-2">
+            <label className="block text-xs font-medium text-gray-600 mb-2">Height</label>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4].map(h => (
+                <button key={h} onClick={() => onUpdateHeight(selection.wall, selection.index, h)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${
+                    h === section.height ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm" :
+                    "border-gray-200 text-gray-500 hover:border-gray-300"
+                  }`}>{h}m</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (section.type === "minigoal") {
+      return (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-4 w-72 max-w-[calc(100vw-2rem)]">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-gray-900">Mini Goal — 2m wide</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+              <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" /></svg>
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">1m high white goal — replaces bar panel</p>
+          <button onClick={() => onToggleMiniGoal(selection.wall, selection.index)}
+            className="w-full py-2.5 rounded-lg text-sm font-medium border-2 border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50 transition-all">
+            Revert to panel
+          </button>
         </div>
       );
     }
@@ -353,43 +442,87 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onUpdat
       const next = selection.index < secs.length - 1 ? secs[selection.index + 1] : null;
       return prev?.type === "goal" || next?.type === "goal";
     })();
+
+    const distToGoal = (() => {
+      const secs = wall.sections;
+      let distLeft = 0, distRight = 0, foundLeft = false, foundRight = false;
+      for (let i = selection.index - 1; i >= 0; i--) {
+        if (secs[i].type === "goal") { foundLeft = true; break; }
+        distLeft += secs[i].width;
+      }
+      for (let i = selection.index + 1; i < secs.length; i++) {
+        if (secs[i].type === "goal") { foundRight = true; break; }
+        distRight += secs[i].width;
+      }
+      if (!foundLeft && !foundRight) return 999;
+      if (!foundLeft) return distRight;
+      if (!foundRight) return distLeft;
+      return Math.min(distLeft, distRight);
+    })();
+
     const maxHeight = isAdjacentToGoal ? 3 : 4;
+    const hasArch = !!section.arch;
+    const canChicane = section.width === 2 && distToGoal >= 2 && !hasArch;
 
     return (
       <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-4 w-72 max-w-[calc(100vw-2rem)]">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-gray-900">
-            {section.type === "gate" ? "Gate" : "Panel"} — {section.width}m wide
+            {section.type === "gate" ? "Gate" : section.type === "chicane" ? "Chicane" : "Panel"} — {section.width}m wide
+            {hasArch && <span className="text-xs text-blue-500 ml-1">(arch)</span>}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" /></svg>
           </button>
         </div>
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-gray-600 mb-2">Height</label>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4].map(h => (
-              <button key={h} onClick={() => h <= maxHeight && onUpdateHeight(selection.wall, selection.index, h)}
-                disabled={h > maxHeight}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${
-                  h === section.height ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm" :
-                  h > maxHeight ? "border-gray-100 text-gray-300 cursor-not-allowed" :
-                  "border-gray-200 text-gray-500 hover:border-gray-300"
-                }`}>{h}m</button>
-            ))}
+        {!hasArch && (
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-600 mb-2">Height</label>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4].map(h => (
+                <button key={h} onClick={() => h <= maxHeight && onUpdateHeight(selection.wall, selection.index, h)}
+                  disabled={h > maxHeight}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${
+                    h === section.height ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm" :
+                    h > maxHeight ? "border-gray-100 text-gray-300 cursor-not-allowed" :
+                    "border-gray-200 text-gray-500 hover:border-gray-300"
+                  }`}>{h}m</button>
+              ))}
+            </div>
+            {isAdjacentToGoal && <p className="text-xs text-amber-600 mt-2">Max 3m adjacent to goal</p>}
           </div>
-          {isAdjacentToGoal && <p className="text-xs text-amber-600 mt-2">Max 3m adjacent to goal</p>}
-        </div>
-        {section.width === 2 && (
-          <button onClick={() => onToggleGate(selection.wall, selection.index)}
-            className={`w-full py-2.5 rounded-lg text-sm font-medium border-2 transition-all ${
-              section.type === "gate"
-                ? "border-blue-500 bg-blue-50 text-blue-700"
-                : "border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50"
-            }`}>
-            {section.type === "gate" ? "✓ Gate — click to revert" : "Convert to gate"}
-          </button>
         )}
+        {hasArch && (
+          <p className="text-xs text-gray-500 mb-4">Arch auto-transitions between {section.height}m wall and 3m goal</p>
+        )}
+        <div className="flex flex-col gap-2">
+          {section.width === 2 && section.type !== "chicane" && !hasArch && (
+            <button onClick={() => onToggleGate(selection.wall, selection.index)}
+              className={`w-full py-2.5 rounded-lg text-sm font-medium border-2 transition-all ${
+                section.type === "gate"
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50"
+              }`}>
+              {section.type === "gate" ? "✓ Gate — click to revert" : "Convert to gate"}
+            </button>
+          )}
+          {canChicane && section.type !== "gate" && (
+            <button onClick={() => onToggleChicane(selection.wall, selection.index)}
+              className={`w-full py-2.5 rounded-lg text-sm font-medium border-2 transition-all ${
+                section.type === "chicane"
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50"
+              }`}>
+              {section.type === "chicane" ? "✓ Chicane — click to revert" : "Convert to chicane"}
+            </button>
+          )}
+          {section.width === 2 && section.type === "panel" && !hasArch && (
+            <button onClick={() => onToggleMiniGoal(selection.wall, selection.index)}
+              className="w-full py-2.5 rounded-lg text-sm font-medium border-2 border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50 transition-all">
+              Add mini goal (replaces bar panel)
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -589,6 +722,12 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
           }
         }
 
+        // Midpoint of curve for height label
+        const midInner = qbez(innerStart, innerCtrl, innerEnd, 0.5);
+        const midOuter = qbez(outerStart, outerCtrl, outerEnd, 0.5);
+        const labelX = (midInner.x + midOuter.x) / 2;
+        const labelY = (midInner.y + midOuter.y) / 2;
+
         elements.push(
           <g key={`${wallId}-${idx}`} data-section="true" className="cursor-pointer"
             onClick={(e) => { e.stopPropagation(); onSelectSection(wallId, idx); }}>
@@ -597,6 +736,11 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
               stroke={sel ? "#b45309" : PANEL_BLUE_DARK}
               strokeWidth={sel ? 2 : 0.5} />
             {barLines}
+            <text x={labelX} y={labelY} textAnchor="middle" dominantBaseline="central"
+              fill="white" fontSize={Math.max(5, SCALE * 0.12)} fontWeight="700"
+              style={{ textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
+              {section.height}m
+            </text>
           </g>
         );
       } else if (section.type === "goal") {
@@ -636,7 +780,71 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
               fill="none" stroke="#374151" strokeWidth={Math.max(1, SCALE * 0.025)} rx={1} />
           </g>
         );
+      } else if (section.type === "minigoal") {
+        // Mini goal: white 2m x 1m goal replacing bar panel
+        elements.push(
+          <g key={`${wallId}-${idx}`} data-section="true" className="cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onSelectSection(wallId, idx); }}>
+            <rect x={sx} y={sy} width={sw} height={T}
+              fill={sel ? SELECTED_OUTLINE : MINIGOAL_WHITE}
+              stroke={sel ? "#b45309" : "#c0c4cc"} strokeWidth={sel ? 2 : 1} rx={1} />
+            {/* Goal mesh pattern */}
+            {!sel && (() => {
+              const lines = [];
+              const gv = 8, gh = 4;
+              for (let g = 1; g < gv; g++) {
+                const fx = sx + (sw * g) / gv;
+                lines.push(<line key={`mg-v-${g}`} x1={fx} y1={sy + 1} x2={fx} y2={sy + T - 1} stroke="#d0d4dc" strokeWidth={0.4} />);
+              }
+              for (let g = 1; g < gh; g++) {
+                const fy = sy + (T * g) / gh;
+                lines.push(<line key={`mg-h-${g}`} x1={sx + 1} y1={fy} x2={sx + sw - 1} y2={fy} stroke="#d0d4dc" strokeWidth={0.4} />);
+              }
+              return lines;
+            })()}
+            {/* Frame border */}
+            <rect x={sx + sw * 0.05} y={sy + T * 0.08} width={sw * 0.9} height={T * 0.84}
+              fill="none" stroke="#9ca3af" strokeWidth={Math.max(1, SCALE * 0.03)} rx={1} />
+            <text x={sx + sw / 2} y={sy + T / 2} textAnchor="middle" dominantBaseline="central"
+              fill="#6b7280" fontSize={Math.max(5, SCALE * 0.12)} fontWeight="600">MINI</text>
+          </g>
+        );
+      } else if (section.type === "chicane") {
+        // Chicane entrance: open frame with 2m offset rebound panels outside
+        const chicH = Math.min(section.height, 2);
+        const reboundOffset = CHICANE_OFFSET * SCALE;
+        const reboundY = flipY ? sy - reboundOffset - T : sy + T + reboundOffset;
+        elements.push(
+          <g key={`${wallId}-${idx}`} data-section="true" className="cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onSelectSection(wallId, idx); }}>
+            {/* Open frame (dashed border, lighter fill) */}
+            <rect x={sx} y={sy} width={sw} height={T}
+              fill={sel ? SELECTED_OUTLINE : "#e8ecf4"} fillOpacity={0.5}
+              stroke={sel ? "#b45309" : "#7888a4"} strokeWidth={sel ? 2 : 1}
+              strokeDasharray={`${Math.max(3, SCALE * 0.08)} ${Math.max(2, SCALE * 0.05)}`} rx={1} />
+            <text x={sx + sw / 2} y={sy + T / 2} textAnchor="middle" dominantBaseline="central"
+              fill="#5b6880" fontSize={Math.max(5, SCALE * 0.11)} fontWeight="700">CHICANE</text>
+            {/* Left rebound panel (2m) - staggered left */}
+            <rect x={sx - sw * 0.25} y={reboundY} width={sw} height={T}
+              fill={sel ? SELECTED_OUTLINE : PANEL_BLUE} stroke={sel ? "#b45309" : PANEL_BLUE_DARK}
+              strokeWidth={sel ? 1.5 : 0.5} rx={1} />
+            {!sel && drawBarLines(sx - sw * 0.25, reboundY, sw, T, SCALE, "h")}
+            {/* Right rebound panel (2m) - staggered right */}
+            <rect x={sx + sw * 0.25} y={reboundY} width={sw} height={T}
+              fill={sel ? SELECTED_OUTLINE : PANEL_BLUE} stroke={sel ? "#b45309" : PANEL_BLUE_DARK}
+              strokeWidth={sel ? 1.5 : 0.5} rx={1} />
+            {!sel && drawBarLines(sx + sw * 0.25, reboundY, sw, T, SCALE, "h")}
+            {/* Rebound posts: 2 per panel = 4 total */}
+            {[sx - sw * 0.25, sx + sw * 0.75, sx + sw * 0.25, sx + sw * 1.25].map((px, pi) => (
+              <g key={`${wallId}-chic-p-${pi}`}>
+                <PostCircle cx={px} cy={reboundY + T / 2} scale={SCALE} />
+              </g>
+            ))}
+          </g>
+        );
       } else {
+        // Regular panel or gate
+        const isMiniGoalType = false;
         const fill = sel ? SELECTED_OUTLINE : (section.type === "gate" ? GATE_GREY : PANEL_BLUE);
         const stroke = sel ? "#b45309" : PANEL_BLUE_DARK;
         elements.push(
@@ -653,12 +861,26 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
                   fill="white" fontSize={Math.max(6, SCALE * 0.14)} fontWeight="700">GATE</text>
               </>
             )}
-            {section.type === "panel" && (
+            {section.type === "panel" && !section.arch && (
               <text x={sx + sw / 2} y={sy + T / 2} textAnchor="middle" dominantBaseline="central"
                 fill="white" fontSize={Math.max(7, SCALE * 0.17)} fontWeight="700"
                 style={{ textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
                 {section.height}m
               </text>
+            )}
+            {section.arch && (
+              <>
+                {/* Arch indicator: quarter-circle curve */}
+                <path d={section.arch.goalSide === "right"
+                  ? `M ${sx + 2} ${sy + T / 2} Q ${sx + sw * 0.6} ${sy + T / 2} ${sx + sw - 2} ${flipY ? sy + T - 1 : sy + 1}`
+                  : `M ${sx + sw - 2} ${sy + T / 2} Q ${sx + sw * 0.4} ${sy + T / 2} ${sx + 2} ${flipY ? sy + T - 1 : sy + 1}`
+                } fill="none" stroke="white" strokeWidth={Math.max(1.5, SCALE * 0.03)} />
+                <text x={sx + sw / 2} y={sy + T / 2} textAnchor="middle" dominantBaseline="central"
+                  fill="white" fontSize={Math.max(5, SCALE * 0.11)} fontWeight="700"
+                  style={{ textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}>
+                  ARCH
+                </text>
+              </>
             )}
           </g>
         );
@@ -689,27 +911,86 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
       const sx = baseX + xOff;
       const sy = baseY + pos * SCALE;
       const sh = section.width * SCALE;
-      const fill = sel ? SELECTED_OUTLINE : (section.type === "gate" ? GATE_GREY : PANEL_BLUE);
-      const stroke = sel ? "#b45309" : PANEL_BLUE_DARK;
 
-      elements.push(
-        <g key={`${wallId}-${idx}`} data-section="true" className="cursor-pointer"
-          onClick={(e) => { e.stopPropagation(); onSelectSection(wallId, idx); }}>
-          <rect x={sx} y={sy} width={T} height={sh}
-            fill={fill} stroke={stroke} strokeWidth={sel ? 2 : 0.5} rx={1} />
-          {!sel && section.type === "panel" && drawBarLines(sx, sy, T, sh, SCALE, "v")}
-          {section.type === "gate" && (
-            <rect x={sx + T * 0.18} y={sy + sh * 0.18} width={T * 0.64} height={sh * 0.64}
-              fill="none" stroke="white" strokeWidth={Math.max(0.8, SCALE * 0.02)} rx={1} />
-          )}
-          <text x={sx + T / 2} y={sy + sh / 2} textAnchor="middle" dominantBaseline="central"
-            fill="white" fontSize={Math.max(7, SCALE * 0.17)} fontWeight="700"
-            style={{ textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}
-            transform={`rotate(-90, ${sx + T / 2}, ${sy + sh / 2})`}>
-            {section.type === "gate" ? "GATE" : `${section.height}m`}
-          </text>
-        </g>
-      );
+      if (section.type === "minigoal") {
+        elements.push(
+          <g key={`${wallId}-${idx}`} data-section="true" className="cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onSelectSection(wallId, idx); }}>
+            <rect x={sx} y={sy} width={T} height={sh}
+              fill={sel ? SELECTED_OUTLINE : MINIGOAL_WHITE}
+              stroke={sel ? "#b45309" : "#c0c4cc"} strokeWidth={sel ? 2 : 1} rx={1} />
+            {!sel && (() => {
+              const lines = [];
+              const gv = 4, gh = 8;
+              for (let g = 1; g < gv; g++) {
+                const fx = sx + (T * g) / gv;
+                lines.push(<line key={`mg-v-${g}`} x1={fx} y1={sy + 1} x2={fx} y2={sy + sh - 1} stroke="#d0d4dc" strokeWidth={0.4} />);
+              }
+              for (let g = 1; g < gh; g++) {
+                const fy = sy + (sh * g) / gh;
+                lines.push(<line key={`mg-h-${g}`} x1={sx + 1} y1={fy} x2={sx + T - 1} y2={fy} stroke="#d0d4dc" strokeWidth={0.4} />);
+              }
+              return lines;
+            })()}
+            <text x={sx + T / 2} y={sy + sh / 2} textAnchor="middle" dominantBaseline="central"
+              fill="#6b7280" fontSize={Math.max(5, SCALE * 0.12)} fontWeight="600"
+              transform={`rotate(-90, ${sx + T / 2}, ${sy + sh / 2})`}>MINI</text>
+          </g>
+        );
+      } else if (section.type === "chicane") {
+        const reboundOffset = CHICANE_OFFSET * SCALE;
+        elements.push(
+          <g key={`${wallId}-${idx}`} data-section="true" className="cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onSelectSection(wallId, idx); }}>
+            <rect x={sx} y={sy} width={T} height={sh}
+              fill={sel ? SELECTED_OUTLINE : "#e8ecf4"} fillOpacity={0.5}
+              stroke={sel ? "#b45309" : "#7888a4"} strokeWidth={sel ? 2 : 1}
+              strokeDasharray={`${Math.max(3, SCALE * 0.08)} ${Math.max(2, SCALE * 0.05)}`} rx={1} />
+            {/* Top rebound (2m) - staggered up */}
+            <rect x={flipX ? sx + T + reboundOffset : sx - reboundOffset - T}
+              y={sy - sh * 0.25} width={T} height={sh}
+              fill={sel ? SELECTED_OUTLINE : PANEL_BLUE} stroke={sel ? "#b45309" : PANEL_BLUE_DARK}
+              strokeWidth={sel ? 1.5 : 0.5} rx={1} />
+            {!sel && drawBarLines(flipX ? sx + T + reboundOffset : sx - reboundOffset - T, sy - sh * 0.25, T, sh, SCALE, "v")}
+            {/* Bottom rebound (2m) - staggered down */}
+            <rect x={flipX ? sx + T + reboundOffset : sx - reboundOffset - T}
+              y={sy + sh * 0.25} width={T} height={sh}
+              fill={sel ? SELECTED_OUTLINE : PANEL_BLUE} stroke={sel ? "#b45309" : PANEL_BLUE_DARK}
+              strokeWidth={sel ? 1.5 : 0.5} rx={1} />
+            {!sel && drawBarLines(flipX ? sx + T + reboundOffset : sx - reboundOffset - T, sy + sh * 0.25, T, sh, SCALE, "v")}
+            {/* Rebound posts: ends of each 2m panel */}
+            {[sy - sh * 0.25, sy + sh * 0.75, sy + sh * 0.25, sy + sh * 1.25].map((py, pi) => (
+              <g key={`${wallId}-chic-p-${pi}`}>
+                <PostCircle cx={flipX ? sx + T + reboundOffset + T / 2 : sx - reboundOffset - T / 2} cy={py} scale={SCALE} />
+              </g>
+            ))}
+            <text x={sx + T / 2} y={sy + sh / 2} textAnchor="middle" dominantBaseline="central"
+              fill="#5b6880" fontSize={Math.max(5, SCALE * 0.10)} fontWeight="700"
+              transform={`rotate(-90, ${sx + T / 2}, ${sy + sh / 2})`}>CHICANE</text>
+          </g>
+        );
+      } else {
+        const fill = sel ? SELECTED_OUTLINE : (section.type === "gate" ? GATE_GREY : PANEL_BLUE);
+        const stroke = sel ? "#b45309" : PANEL_BLUE_DARK;
+        elements.push(
+          <g key={`${wallId}-${idx}`} data-section="true" className="cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onSelectSection(wallId, idx); }}>
+            <rect x={sx} y={sy} width={T} height={sh}
+              fill={fill} stroke={stroke} strokeWidth={sel ? 2 : 0.5} rx={1} />
+            {!sel && section.type === "panel" && drawBarLines(sx, sy, T, sh, SCALE, "v")}
+            {section.type === "gate" && (
+              <rect x={sx + T * 0.18} y={sy + sh * 0.18} width={T * 0.64} height={sh * 0.64}
+                fill="none" stroke="white" strokeWidth={Math.max(0.8, SCALE * 0.02)} rx={1} />
+            )}
+            <text x={sx + T / 2} y={sy + sh / 2} textAnchor="middle" dominantBaseline="central"
+              fill="white" fontSize={Math.max(7, SCALE * 0.17)} fontWeight="700"
+              style={{ textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}
+              transform={`rotate(-90, ${sx + T / 2}, ${sy + sh / 2})`}>
+              {section.type === "gate" ? "GATE" : `${section.height}m`}
+            </text>
+          </g>
+        );
+      }
 
       if (idx < wall.sections.length - 1) {
         const px = baseX + (flipX ? T / 2 : -T / 2);
@@ -814,18 +1095,211 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
 // ─── 3D Isometric View ──────────────────────────────────────────────────────
 function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
   const [rotation, setRotation] = useState(0);
+  const [zoom, setZoom] = useState(1);
+
+  const isSel = (wId, idx) =>
+    (selection?.type === "section" && selection.wall === wId && selection.index === idx) ||
+    (selection?.type === "wall" && selection.wall === wId);
 
   if (court.isEndWallOnly) {
+    // End wall 3D view - front-facing isometric of just the end wall
+    const W = court.width;
+    const maxH = Math.max(...court.walls.end1.sections.map(s => s.height));
+    const baseISO = Math.min(14, 380 / Math.max(W, maxH * 2));
+    const ISO = baseISO * zoom;
+    const HH = ISO * 0.7;
+    const cx = 450, cy = 420;
+
+    const toIso = (x, y, z = 0) => {
+      const a = [{ ax: 1, ay: 1 }, { ax: -1, ay: 1 }, { ax: -1, ay: -1 }, { ax: 1, ay: -1 }][rotation];
+      return { x: (x * a.ax - y * a.ay) * ISO * 0.866 + cx, y: (x * a.ax + y * a.ay) * ISO * 0.5 - z * HH + cy };
+    };
+    const quad = (x1, y1, x2, y2, z1, z2) => {
+      const pts = [toIso(x1, y1, z1), toIso(x2, y2, z1), toIso(x2, y2, z2), toIso(x1, y1, z2)];
+      return pts.map(p => `${p.x},${p.y}`).join(" ");
+    };
+    const elems = [];
+
+    // Small ground strip
+    const depth = 1.5;
+    const fc = [toIso(0, 0), toIso(W, 0), toIso(W, depth), toIso(0, depth)].map(p => `${p.x},${p.y}`).join(" ");
+    elems.push(<polygon key="floor" points={fc} fill={COURT_SURFACE} stroke="#3a3e44" strokeWidth={1} />);
+
+    // Render end1 wall sections
+    const wall = court.walls.end1;
+    let offset = 0;
+    const shade = false;
+    wall.sections.forEach((section, idx) => {
+      const x1 = offset, x2 = offset + section.width;
+      const y1 = 0, y2 = 0; // flat along x-axis
+      const h = section.height;
+      const sel = isSel("end1", idx);
+
+      if (section.type === "curvedCorner") {
+        // Simplified curved corner in 3D
+        for (let level = 0; level < h; level++) {
+          const isBar = level === 0;
+          let fillColor;
+          if (sel) fillColor = SELECTED_OUTLINE;
+          else if (isBar) fillColor = PANEL_BLUE;
+          else fillColor = MESH_BLUE;
+          const pts = quad(x1, y1, x2, y2, level, level + 1);
+          elems.push(
+            <polygon key={`end1-${idx}-${level}`} points={pts} data-section="true"
+              fill={fillColor} stroke={sel ? "#b45309" : (isBar ? PANEL_BLUE_DARK : "#3555b8")}
+              strokeWidth={sel ? 2 : 0.5} opacity={0.88} className="cursor-pointer"
+              onClick={(e) => { e.stopPropagation(); onSelectSection("end1", idx); }} />
+          );
+        }
+      } else if (section.type === "goal") {
+        const pts = quad(x1, y1, x2, y2, 0, h);
+        elems.push(
+          <polygon key={`end1-${idx}`} points={pts} data-section="true"
+            fill={sel ? SELECTED_OUTLINE : GOAL_FRAME_GREY} stroke={sel ? "#b45309" : "#9ca3af"}
+            strokeWidth={sel ? 2 : 0.5} className="cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onSelectSection("end1", idx); }} />
+        );
+        // Goal opening
+        const openPts = quad(x1 + (x2 - x1) * 0.12, y1, x1 + (x2 - x1) * 0.88, y2, 0.05, h * 0.65);
+        elems.push(<polygon key={`end1-${idx}-o`} points={openPts} fill="#2a2e34" stroke="#6b7280" strokeWidth={0.3} opacity={0.6} />);
+        // Basketball hoop
+        const isEnd1_3d = true;
+        const bbOffsetY = -0.5;
+        const bbCenter = toIso((x1 + x2) / 2, (y1 + y2) / 2 + bbOffsetY, h + 0.8);
+        elems.push(
+          <rect key={`end1-${idx}-bb`} x={bbCenter.x - ISO * 0.45} y={bbCenter.y - ISO * 0.4}
+            width={ISO * 0.9} height={ISO * 0.7}
+            fill="white" stroke="#374151" strokeWidth={1} rx={1} />
+        );
+        const hoopCenter = toIso((x1 + x2) / 2, (y1 + y2) / 2 + bbOffsetY, h + 0.3);
+        elems.push(
+          <circle key={`end1-${idx}-hoop`} cx={hoopCenter.x} cy={hoopCenter.y}
+            r={ISO * 0.15} fill="none" stroke="#f97316" strokeWidth={Math.max(1, ISO * 0.08)} />
+        );
+      } else if (section.type === "minigoal") {
+        const pts = quad(x1, y1, x2, y2, 0, 1);
+        elems.push(
+          <polygon key={`end1-${idx}-mg`} points={pts} data-section="true"
+            fill={sel ? SELECTED_OUTLINE : "#e8eaee"} stroke={sel ? "#b45309" : "#9ca3af"}
+            strokeWidth={sel ? 2 : 0.5} opacity={0.9} className="cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onSelectSection("end1", idx); }} />
+        );
+      } else {
+        for (let level = 0; level < h; level++) {
+          const isBar = level === 0;
+          const isGate = section.type === "gate" && level < 2;
+          const isArch = section.arch && level === section.arch.baseLevel;
+          if (section.arch && level > section.arch.baseLevel) continue;
+          let fillColor;
+          if (sel) fillColor = SELECTED_OUTLINE;
+          else if (isGate) fillColor = GATE_GREY;
+          else if (isBar) fillColor = PANEL_BLUE;
+          else fillColor = MESH_BLUE;
+
+          if (isArch && !sel) {
+            const arch = section.arch;
+            const segs = 8;
+            let archPoly = "";
+            const bl = toIso(x1, y1, level);
+            const br = toIso(x2, y2, level);
+            archPoly += `${bl.x},${bl.y} ${br.x},${br.y} `;
+            const rightH = arch.goalSide === "right" ? arch.goalHeight : arch.outerHeight;
+            const leftH = arch.goalSide === "left" ? arch.goalHeight : arch.outerHeight;
+            for (let s = 0; s <= segs; s++) {
+              const t = 1 - s / segs;
+              const fx = x1 + (x2 - x1) * t, fy = y1 + (y2 - y1) * t;
+              let curveH;
+              if (rightH >= leftH) curveH = leftH + (rightH - leftH) * Math.sin(t * Math.PI / 2);
+              else curveH = rightH + (leftH - rightH) * Math.cos(t * Math.PI / 2);
+              const p = toIso(fx, fy, level + curveH);
+              archPoly += `${p.x},${p.y} `;
+            }
+            elems.push(
+              <polygon key={`end1-${idx}-${level}`} points={archPoly.trim()} data-section="true"
+                fill={MESH_BLUE} stroke="#3555b8" strokeWidth={0.5} opacity={0.88}
+                className="cursor-pointer" onClick={(e) => { e.stopPropagation(); onSelectSection("end1", idx); }} />
+            );
+          } else {
+            const pts = quad(x1, y1, x2, y2, level, level + 1);
+            elems.push(
+              <polygon key={`end1-${idx}-${level}`} points={pts} data-section="true"
+                fill={fillColor} stroke={sel ? "#b45309" : (isBar ? PANEL_BLUE_DARK : "#3555b8")}
+                strokeWidth={sel ? 2 : 0.5} opacity={0.88} className="cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); onSelectSection("end1", idx); }} />
+            );
+          }
+          if (isBar && !sel && !isGate) {
+            const nb = Math.max(3, Math.round(section.width * 5));
+            for (let b = 1; b < nb; b++) {
+              const frac = b / nb;
+              const bx = x1 + (x2 - x1) * frac, by = y1;
+              const bp = toIso(bx, by, level); const tp = toIso(bx, by, level + 1);
+              elems.push(<line key={`end1-${idx}-bl-${b}`} x1={bp.x} y1={bp.y} x2={tp.x} y2={tp.y} stroke="#1a3d8f" strokeWidth={0.4} opacity={0.35} />);
+            }
+          }
+          if (!isBar && !isGate && !sel && !isArch) {
+            const gv = Math.max(2, Math.round(section.width * 4)), gh = 3;
+            for (let g = 1; g < gh; g++) {
+              const f = g / gh;
+              const lp = toIso(x1, y1, level + f); const rp = toIso(x2, y2, level + f);
+              elems.push(<line key={`end1-${idx}-${level}-mh-${g}`} x1={lp.x} y1={lp.y} x2={rp.x} y2={rp.y} stroke="#3555b8" strokeWidth={0.25} opacity={0.25} />);
+            }
+            for (let g = 1; g < gv; g++) {
+              const f = g / gv;
+              const bx = x1 + (x2 - x1) * f, by = y1;
+              const bp = toIso(bx, by, level); const tp = toIso(bx, by, level + 1);
+              elems.push(<line key={`end1-${idx}-${level}-mv-${g}`} x1={bp.x} y1={bp.y} x2={tp.x} y2={tp.y} stroke="#3555b8" strokeWidth={0.25} opacity={0.25} />);
+            }
+          }
+        }
+      }
+      // Posts
+      if (idx < wall.sections.length - 1 && section.type !== "goal" && wall.sections[idx + 1].type !== "goal") {
+        const pH = Math.max(section.height, wall.sections[idx + 1].height);
+        const pb = toIso(x2, y2, 0); const pt = toIso(x2, y2, pH);
+        elems.push(<line key={`end1-${idx}-3dp`} x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y} stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />);
+        elems.push(<circle key={`end1-${idx}-3dpt`} cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)} fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />);
+      }
+      offset += section.width;
+    });
+    // End posts
+    const firstSec = wall.sections[0], lastSec = wall.sections[wall.sections.length - 1];
+    if (firstSec.type !== "curvedCorner") {
+      const pb = toIso(0, 0, 0); const pt = toIso(0, 0, firstSec.height);
+      elems.push(<line key="end1-lp" x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y} stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />);
+      elems.push(<circle key="end1-lpt" cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)} fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />);
+    }
+    if (lastSec.type !== "curvedCorner") {
+      const pb = toIso(W, 0, 0); const pt = toIso(W, 0, lastSec.height);
+      elems.push(<line key="end1-rp" x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y} stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />);
+      elems.push(<circle key="end1-rpt" cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)} fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />);
+    }
+
     return (
-      <div className="w-full h-full flex items-center justify-center" style={{ background: "#f1f5f9" }}>
-        <p className="text-gray-400 text-sm">3D view available for full arenas</p>
+      <div className="w-full h-full relative" style={{ background: "#f1f5f9" }}>
+        <svg className="w-full h-full" viewBox="0 0 900 640">{elems}</svg>
+        <div className="absolute top-3 right-3 flex gap-1">
+          {["↗ NE", "↘ SE", "↙ SW", "↖ NW"].map((label, i) => (
+            <button key={label} onClick={() => setRotation(i)}
+              className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all ${
+                rotation === i ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-gray-500 border-gray-300 hover:border-gray-400"
+              }`}>{label}</button>
+          ))}
+        </div>
+        <div className="absolute bottom-3 right-3 flex flex-col gap-1">
+          <button onClick={() => setZoom(z => Math.min(z + 0.2, 3))}
+            className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">+</button>
+          <button onClick={() => setZoom(z => Math.max(z - 0.2, 0.4))}
+            className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">−</button>
+        </div>
       </div>
     );
   }
 
   const W = court.width;
   const L = court.length;
-  const ISO = Math.min(14, 380 / Math.max(W, L));
+  const baseISO = Math.min(14, 380 / Math.max(W, L));
+  const ISO = baseISO * zoom;
   const HH = ISO * 0.7;
   const cx = 450, cy = 320;
 
@@ -838,10 +1312,6 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
     const pts = [toIso(x1, y1, z1), toIso(x2, y2, z1), toIso(x2, y2, z2), toIso(x1, y1, z2)];
     return pts.map(p => `${p.x},${p.y}`).join(" ");
   };
-
-  const isSel = (wId, idx) =>
-    (selection?.type === "section" && selection.wall === wId && selection.index === idx) ||
-    (selection?.type === "wall" && selection.wall === wId);
 
   const elems = [];
 
@@ -987,24 +1457,153 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
           <circle key={`${wId}-${idx}-hoop`} cx={bbCenter.x} cy={bbCenter.y + ISO * 0.5}
             r={ISO * 0.15} fill="none" stroke="#f97316" strokeWidth={Math.max(1, ISO * 0.08)} />
         );
+      } else if (section.type === "minigoal") {
+        // 3D Mini goal: white panel at ground level
+        const pts = quad(x1, y1, x2, y2, 0, 1);
+        elems.push(
+          <polygon key={`${wId}-${idx}-mg`} points={pts} data-section="true"
+            fill={sel ? SELECTED_OUTLINE : "#e8eaee"} stroke={sel ? "#b45309" : "#9ca3af"}
+            strokeWidth={sel ? 2 : 0.5} opacity={0.9}
+            className="cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onSelectSection(wId, idx); }} />
+        );
+        // Mini goal mesh grid
+        if (!sel) {
+          const gv = 6, gh = 3;
+          for (let g = 1; g < gh; g++) {
+            const f = g / gh;
+            const lp = toIso(x1, y1, f);
+            const rp = toIso(x2, y2, f);
+            elems.push(<line key={`${wId}-${idx}-mgh-${g}`} x1={lp.x} y1={lp.y} x2={rp.x} y2={rp.y} stroke="#b0b4bc" strokeWidth={0.3} opacity={0.4} />);
+          }
+          for (let g = 1; g < gv; g++) {
+            const f = g / gv;
+            const bx = x1 + (x2 - x1) * f, by = y1 + (y2 - y1) * f;
+            const bp = toIso(bx, by, 0);
+            const tp = toIso(bx, by, 1);
+            elems.push(<line key={`${wId}-${idx}-mgv-${g}`} x1={bp.x} y1={bp.y} x2={tp.x} y2={tp.y} stroke="#b0b4bc" strokeWidth={0.3} opacity={0.4} />);
+          }
+        }
+      } else if (section.type === "chicane") {
+        // 3D Chicane: open frame with offset rebound panels
+        const chicH = Math.min(h, 2);
+        // Open frame (translucent)
+        for (let level = 0; level < h; level++) {
+          const pts = quad(x1, y1, x2, y2, level, level + 1);
+          const isFrame = level < chicH;
+          elems.push(
+            <polygon key={`${wId}-${idx}-${level}`} points={pts} data-section="true"
+              fill={sel ? SELECTED_OUTLINE : (isFrame ? "#c8d0e0" : (shade ? PANEL_BLUE : MESH_BLUE))}
+              stroke={sel ? "#b45309" : "#7888a4"}
+              strokeWidth={sel ? 2 : 0.5} opacity={isFrame ? 0.4 : 0.88}
+              className="cursor-pointer"
+              onClick={(e) => { e.stopPropagation(); onSelectSection(wId, idx); }} />
+          );
+        }
+        // Rebound panels offset outside - two 2m panels, staggered
+        const isEndWall = wId === "end1" || wId === "end2";
+        const dx = x2 - x1, dy = y2 - y1;
+        // Normal direction (outward from court)
+        let nx, ny;
+        if (isEndWall) {
+          ny = wId === "end1" ? CHICANE_OFFSET : -CHICANE_OFFSET;
+          nx = 0;
+        } else {
+          nx = wId === "side2" ? CHICANE_OFFSET : -CHICANE_OFFSET;
+          ny = 0;
+        }
+        // Two 2m rebound panels, staggered by 0.5m each side
+        const qDx = dx * 0.25, qDy = dy * 0.25; // quarter of section width offset
+        const r1 = { x1: x1 - qDx + nx, y1: y1 - qDy + ny, x2: x2 - qDx + nx, y2: y2 - qDy + ny };
+        const r2 = { x1: x1 + qDx + nx, y1: y1 + qDy + ny, x2: x2 + qDx + nx, y2: y2 + qDy + ny };
+        [r1, r2].forEach((r, ri) => {
+          for (let level = 0; level < chicH; level++) {
+            const rpts = quad(r.x1, r.y1, r.x2, r.y2, level, level + 1);
+            elems.push(
+              <polygon key={`${wId}-${idx}-reb-${ri}-${level}`} points={rpts}
+                fill={shade ? PANEL_BLUE_DARK : PANEL_BLUE} stroke={PANEL_BLUE_DARK}
+                strokeWidth={0.5} opacity={0.88} />
+            );
+            if (level === 0 && !sel) {
+              const nb = Math.max(3, Math.round(section.width * 5));
+              for (let b = 1; b < nb; b++) {
+                const frac = b / nb;
+                const bx = r.x1 + (r.x2 - r.x1) * frac, by = r.y1 + (r.y2 - r.y1) * frac;
+                const bp = toIso(bx, by, 0);
+                const tp = toIso(bx, by, 1);
+                elems.push(<line key={`${wId}-${idx}-reb-${ri}-bl-${b}`} x1={bp.x} y1={bp.y} x2={tp.x} y2={tp.y} stroke="#1a3d8f" strokeWidth={0.3} opacity={0.3} />);
+              }
+            }
+          }
+          // Rebound posts at each end
+          [{ x: r.x1, y: r.y1 }, { x: r.x2, y: r.y2 }].forEach((pp, pi) => {
+            const rpb = toIso(pp.x, pp.y, 0);
+            const rpt = toIso(pp.x, pp.y, chicH);
+            elems.push(<line key={`${wId}-${idx}-reb-${ri}-p${pi}`} x1={rpb.x} y1={rpb.y} x2={rpt.x} y2={rpt.y} stroke={POST_GREY} strokeWidth={Math.max(1.5, ISO * 0.1)} strokeLinecap="round" />);
+            elems.push(<circle key={`${wId}-${idx}-reb-${ri}-pt${pi}`} cx={rpt.x} cy={rpt.y} r={Math.max(1.5, ISO * 0.06)} fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.3} />);
+          });
+        });
       } else {
         for (let level = 0; level < h; level++) {
           const isBar = level === 0;
           const isGate = section.type === "gate" && level < 2;
+          const isChicane = false;
+          const isArch = section.arch && level === section.arch.baseLevel;
+          // Skip levels above arch - the arch polygon covers them
+          if (section.arch && level > section.arch.baseLevel) continue;
           let fillColor;
           if (sel) fillColor = SELECTED_OUTLINE;
           else if (isGate) fillColor = shade ? "#8a929e" : GATE_GREY;
           else if (isBar) fillColor = shade ? PANEL_BLUE_DARK : PANEL_BLUE;
           else fillColor = shade ? PANEL_BLUE : MESH_BLUE;
 
-          const pts = quad(x1, y1, x2, y2, level, level + 1);
-          elems.push(
-            <polygon key={`${wId}-${idx}-${level}`} points={pts} data-section="true"
-              fill={fillColor} stroke={sel ? "#b45309" : (isBar ? PANEL_BLUE_DARK : "#3555b8")}
-              strokeWidth={sel ? 2 : 0.5} opacity={0.88}
-              className="cursor-pointer"
-              onClick={(e) => { e.stopPropagation(); onSelectSection(wId, idx); }} />
-          );
+          if (isArch && !sel) {
+            // Draw arch panel with curved top edge
+            const arch = section.arch;
+            const goalH = arch.goalHeight; // height on goal side
+            const outerH = arch.outerHeight; // height on outer side
+            const segs = 8;
+            // Build polygon with curved top edge
+            let archPoly = "";
+            // Bottom edge
+            const bl = toIso(x1, y1, level);
+            const br = toIso(x2, y2, level);
+            archPoly += `${bl.x},${bl.y} ${br.x},${br.y} `;
+            // Determine height at right vs left side
+            const rightH = arch.goalSide === "right" ? goalH : outerH;
+            const leftH = arch.goalSide === "left" ? goalH : outerH;
+            // Top edge: curved from right to left with quarter-circle bulge upward
+            for (let s = 0; s <= segs; s++) {
+              const t = 1 - s / segs; // right (t=1) to left (t=0)
+              const fx = x1 + (x2 - x1) * t;
+              const fy = y1 + (y2 - y1) * t;
+              // Quarter-circle interpolation - always bulges upward
+              let curveH;
+              if (rightH >= leftH) {
+                curveH = leftH + (rightH - leftH) * Math.sin(t * Math.PI / 2);
+              } else {
+                curveH = rightH + (leftH - rightH) * Math.cos(t * Math.PI / 2);
+              }
+              const p = toIso(fx, fy, level + curveH);
+              archPoly += `${p.x},${p.y} `;
+            }
+            elems.push(
+              <polygon key={`${wId}-${idx}-${level}`} points={archPoly.trim()} data-section="true"
+                fill={shade ? PANEL_BLUE : MESH_BLUE} stroke="#3555b8"
+                strokeWidth={0.5} opacity={0.88}
+                className="cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); onSelectSection(wId, idx); }} />
+            );
+          } else {
+            const pts = quad(x1, y1, x2, y2, level, level + 1);
+            elems.push(
+              <polygon key={`${wId}-${idx}-${level}`} points={pts} data-section="true"
+                fill={fillColor} stroke={sel ? "#b45309" : (isBar ? PANEL_BLUE_DARK : "#3555b8")}
+                strokeWidth={sel ? 2 : 0.5} opacity={0.88}
+                className="cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); onSelectSection(wId, idx); }} />
+            );
+          }
 
           // Bar lines
           if (isBar && !sel && !isGate) {
@@ -1020,8 +1619,8 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
               );
             }
           }
-          // Mesh grid
-          if (!isBar && !isGate && !sel) {
+          // Mesh grid (skip arch level - it has its own shape)
+          if (!isBar && !isGate && !sel && !isArch) {
             const gv = Math.max(2, Math.round(section.width * 4));
             const gh = 3;
             for (let g = 1; g < gh; g++) {
@@ -1116,6 +1715,12 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
               rotation === i ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-gray-500 border-gray-300 hover:border-gray-400"
             }`}>{label}</button>
         ))}
+      </div>
+      <div className="absolute bottom-3 right-3 flex flex-col gap-1">
+        <button onClick={() => setZoom(z => Math.min(z + 0.2, 3))}
+          className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">+</button>
+        <button onClick={() => setZoom(z => Math.max(z - 0.2, 0.4))}
+          className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">−</button>
       </div>
     </div>
   );
@@ -1229,12 +1834,37 @@ function Configurator({ court, setCourt, onBack }) {
     });
   }, [setCourt]);
 
+  const toggleChicane = useCallback((wallId, index) => {
+    setCourt(prev => {
+      const c = JSON.parse(JSON.stringify(prev));
+      const s = c.walls[wallId].sections[index];
+      if (s.width !== 2) return prev;
+      s.type = s.type === "chicane" ? "panel" : "chicane";
+      return c;
+    });
+  }, [setCourt]);
+
+  const toggleMiniGoal = useCallback((wallId, index) => {
+    setCourt(prev => {
+      const c = JSON.parse(JSON.stringify(prev));
+      const s = c.walls[wallId].sections[index];
+      if (s.width !== 2) return prev;
+      if (s.type === "minigoal") {
+        s.type = "panel";
+      } else {
+        s.type = "minigoal";
+        s.height = Math.max(s.height, 1);
+      }
+      return c;
+    });
+  }, [setCourt]);
+
   const updateWallHeight = useCallback((wallId, newHeight) => {
     setCourt(prev => {
       const c = JSON.parse(JSON.stringify(prev));
       c.walls[wallId].sections.forEach((s, idx) => {
         if (s.type === "goal") return;
-        if (s.type === "curvedCorner") { s.height = Math.min(newHeight, 3); return; }
+        if (s.type === "curvedCorner") { s.height = newHeight; return; }
         const secs = c.walls[wallId].sections;
         const p = idx > 0 ? secs[idx - 1] : null;
         const n = idx < secs.length - 1 ? secs[idx + 1] : null;
@@ -1259,7 +1889,7 @@ function Configurator({ court, setCourt, onBack }) {
     setCourt(prev => {
       const c = JSON.parse(JSON.stringify(prev));
       const wall = c.walls.end1;
-      const corner = { type: "curvedCorner", width: CURVED_CORNER_SIZE, height: Math.min(height, 3) };
+      const corner = { type: "curvedCorner", width: CURVED_CORNER_SIZE, height };
       if (side === "left") wall.sections.unshift(corner);
       else wall.sections.push(corner);
       c.width = wall.sections.reduce((s, sec) => s + sec.width, 0);
@@ -1329,6 +1959,7 @@ function Configurator({ court, setCourt, onBack }) {
           <div className="absolute bottom-3 right-3 left-3 sm:left-auto z-20 flex justify-center sm:justify-end">
             <SectionEditor court={court} selection={selection}
               onUpdateHeight={updateSectionHeight} onToggleGate={toggleGate}
+              onToggleChicane={toggleChicane} onToggleMiniGoal={toggleMiniGoal}
               onUpdateWallHeight={updateWallHeight} onClose={clearSelection} />
           </div>
         )}
@@ -1371,6 +2002,14 @@ function Configurator({ court, setCourt, onBack }) {
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: GATE_GREY }} />
             <span className="text-xs text-gray-500">Gate</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: MINIGOAL_WHITE, border: "1px solid #c0c4cc" }} />
+            <span className="text-xs text-gray-500">Mini Goal</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#e8ecf4", border: "1px dashed #7888a4" }} />
+            <span className="text-xs text-gray-500">Chicane</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: POST_GREY, border: "1px solid #8a929e" }} />
