@@ -129,6 +129,40 @@ function generateEndWallOnly() {
   };
 }
 
+// Recalculate arch properties on end walls based on current section heights
+function recalcArches(court) {
+  const endWalls = court.isEndWallOnly ? ["end1"] : ["end1", "end2"];
+  endWalls.forEach(wId => {
+    const wall = court.walls[wId];
+    if (!wall) return;
+    const secs = wall.sections;
+    secs.forEach((sec, i) => {
+      // Only panels can have arches
+      if (sec.type !== "panel") { delete sec.arch; return; }
+      // Check if adjacent to a goal
+      const prev = i > 0 ? secs[i - 1] : null;
+      const next = i < secs.length - 1 ? secs[i + 1] : null;
+      const goalOnLeft = prev?.type === "goal";
+      const goalOnRight = next?.type === "goal";
+      if (!goalOnLeft && !goalOnRight) { delete sec.arch; return; }
+      // Must be 2m wide for arch
+      if (sec.width !== 2) { delete sec.arch; return; }
+      const goalSide = goalOnRight ? "right" : "left";
+      const h = sec.height;
+      if (h === 2) {
+        // 2m wall → arch from 1m (outer) to 2m (goal side) above 1m bar
+        sec.arch = { baseLevel: 1, goalHeight: 2, outerHeight: 1, goalSide };
+      } else if (h === 4) {
+        // 4m wall → arch from 2m (outer) to 1m (goal side) above 2m bar+mesh
+        sec.arch = { baseLevel: 2, goalHeight: 1, outerHeight: 2, goalSide };
+      } else {
+        // 1m or 3m: no arch needed (1m is below goal, 3m matches goal height)
+        delete sec.arch;
+      }
+    });
+  });
+}
+
 // ─── BOM Calculation ─────────────────────────────────────────────────────────
 function calculateBOM(court) {
   const bom = {};
@@ -182,6 +216,7 @@ function calculateBOM(court) {
       const left = i > 0 ? secs[i - 1] : null;
       const right = i < secs.length ? secs[i] : null;
       if (left?.type === "goal" || right?.type === "goal") continue;
+      if (left?.type === "curvedCorner" || right?.type === "curvedCorner") continue;
       const h = Math.max(left?.height || 0, right?.height || 0);
       if (h > 0) {
         const isCorner = (i === 0 || i === secs.length) && !court.isEndWallOnly && court.cornerType === "90deg";
@@ -347,7 +382,7 @@ function SetupForm({ onGenerate, onBack }) {
 }
 
 // ─── Section Editor ──────────────────────────────────────────────────────────
-function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onToggleChicane, onToggleMiniGoal, onUpdateWallHeight, onClose }) {
+function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onToggleChicane, onToggleMiniGoal, onDeleteSection, onUpdateWallHeight, onClose }) {
   if (!selection) return null;
 
   if (selection.type === "wall") {
@@ -416,6 +451,12 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onToggl
               ))}
             </div>
           </div>
+          {court.isEndWallOnly && (
+            <button onClick={() => onDeleteSection(selection.wall, selection.index)}
+              className="w-full mt-2 py-2 rounded-lg text-sm font-medium border-2 border-red-200 text-red-500 hover:border-red-400 hover:bg-red-50 transition-all">
+              Remove corner
+            </button>
+          )}
         </div>
       );
     }
@@ -458,6 +499,12 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onToggl
             className="w-full py-2.5 rounded-lg text-sm font-medium border-2 border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50 transition-all">
             Revert to panel
           </button>
+          {court.isEndWallOnly && (
+            <button onClick={() => onDeleteSection(selection.wall, selection.index)}
+              className="w-full mt-2 py-2 rounded-lg text-sm font-medium border-2 border-red-200 text-red-500 hover:border-red-400 hover:bg-red-50 transition-all">
+              Remove section
+            </button>
+          )}
         </div>
       );
     }
@@ -486,7 +533,7 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onToggl
       return Math.min(distLeft, distRight);
     })();
 
-    const maxHeight = isAdjacentToGoal ? 3 : 4;
+    const maxHeight = (isAdjacentToGoal && section.width !== 2) ? 3 : 4;
     const hasArch = !!section.arch;
     const canChicane = section.width === 2 && distToGoal >= 2 && !hasArch;
 
@@ -501,26 +548,22 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onToggl
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" /></svg>
           </button>
         </div>
-        {!hasArch && (
-          <div className="mb-4">
-            <label className="block text-xs font-medium text-gray-600 mb-2">Height</label>
-            <div className="flex gap-2">
-              {[1, 2, 3, 4].map(h => (
-                <button key={h} onClick={() => h <= maxHeight && onUpdateHeight(selection.wall, selection.index, h)}
-                  disabled={h > maxHeight}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${
-                    h === section.height ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm" :
-                    h > maxHeight ? "border-gray-100 text-gray-300 cursor-not-allowed" :
-                    "border-gray-200 text-gray-500 hover:border-gray-300"
-                  }`}>{h}m</button>
-              ))}
-            </div>
-            {isAdjacentToGoal && <p className="text-xs text-amber-600 mt-2">Max 3m adjacent to goal</p>}
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-600 mb-2">Height</label>
+          <div className="flex gap-2">
+            {[1, 2, 3, 4].map(h => (
+              <button key={h} onClick={() => h <= maxHeight && onUpdateHeight(selection.wall, selection.index, h)}
+                disabled={h > maxHeight}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${
+                  h === section.height ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm" :
+                  h > maxHeight ? "border-gray-100 text-gray-300 cursor-not-allowed" :
+                  "border-gray-200 text-gray-500 hover:border-gray-300"
+                }`}>{h}m</button>
+            ))}
           </div>
-        )}
-        {hasArch && (
-          <p className="text-xs text-gray-500 mb-4">Arch auto-transitions between {section.height}m wall and 3m goal</p>
-        )}
+          {isAdjacentToGoal && section.width !== 2 && <p className="text-xs text-amber-600 mt-2">Max 3m adjacent to goal</p>}
+          {hasArch && <p className="text-xs text-blue-500 mt-2">Arch transitions between {section.height}m wall and 3m goal</p>}
+        </div>
         <div className="flex flex-col gap-2">
           {section.width === 2 && section.type !== "chicane" && !hasArch && (
             <button onClick={() => onToggleGate(selection.wall, selection.index)}
@@ -546,6 +589,12 @@ function SectionEditor({ court, selection, onUpdateHeight, onToggleGate, onToggl
             <button onClick={() => onToggleMiniGoal(selection.wall, selection.index)}
               className="w-full py-2.5 rounded-lg text-sm font-medium border-2 border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50 transition-all">
               Add mini goal (replaces bar panel)
+            </button>
+          )}
+          {court.isEndWallOnly && (
+            <button onClick={() => onDeleteSection(selection.wall, selection.index)}
+              className="w-full py-2 rounded-lg text-sm font-medium border-2 border-red-200 text-red-500 hover:border-red-400 hover:bg-red-50 transition-all">
+              Remove section
             </button>
           )}
         </div>
@@ -904,10 +953,11 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
         );
       }
 
-      // Posts
+      // Posts between sections (goals act as posts, so skip goal adjacencies)
       if (idx < wall.sections.length - 1) {
         const nextSec = wall.sections[idx + 1];
-        if (section.type !== "goal" && nextSec.type !== "goal") {
+        if (section.type !== "curvedCorner" && nextSec.type !== "curvedCorner" &&
+            section.type !== "goal" && nextSec.type !== "goal") {
           const px = baseX + (pos + section.width) * SCALE;
           const py = baseY + (flipY ? -T / 2 : T / 2);
           elements.push(<g key={`${wallId}-p-${idx}`}><PostCircle cx={px} cy={py} scale={SCALE} /></g>);
@@ -915,6 +965,18 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
       }
       pos += section.width;
     });
+
+    // End posts (outer edges of wall)
+    if (court.isEndWallOnly && wall.sections.length > 0) {
+      const first = wall.sections[0], last = wall.sections[wall.sections.length - 1];
+      if (first.type !== "curvedCorner") {
+        elements.push(<g key={`${wallId}-ep-l`}><PostCircle cx={baseX} cy={baseY + (flipY ? -T / 2 : T / 2)} scale={SCALE} /></g>);
+      }
+      if (last.type !== "curvedCorner") {
+        elements.push(<g key={`${wallId}-ep-r`}><PostCircle cx={baseX + pos * SCALE} cy={baseY + (flipY ? -T / 2 : T / 2)} scale={SCALE} /></g>);
+      }
+    }
+
     return elements;
   };
 
@@ -1011,19 +1073,49 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
     return elements;
   };
 
+  const zoomBy = (factor) => {
+    setViewBox(vb => {
+      if (!vb) return vb;
+      const cx = vb.x + vb.w / 2, cy = vb.y + vb.h / 2;
+      return { x: cx - (vb.w * factor) / 2, y: cy - (vb.h * factor) / 2, w: vb.w * factor, h: vb.h * factor };
+    });
+  };
+  const resetView = () => {
+    if (court.isEndWallOnly) {
+      const totalW = court.walls.end1.sections.reduce((s, sec) => s + sec.width, 0);
+      setViewBox({ x: -padding * SCALE, y: -padding * SCALE, w: (totalW + padding * 2) * SCALE, h: (padding * 2 + 2) * SCALE });
+    } else {
+      setViewBox({ x: -padding * SCALE, y: -padding * SCALE, w: (court.width + padding * 2) * SCALE, h: (court.length + padding * 2) * SCALE });
+    }
+  };
+
+  const zoomButtons = (
+    <div className="absolute bottom-3 right-3 flex flex-col gap-1 z-10">
+      <button onClick={() => zoomBy(0.75)}
+        className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">+</button>
+      <button onClick={() => zoomBy(1.33)}
+        className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">−</button>
+      <button onClick={resetView}
+        className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-500 text-xs flex items-center justify-center hover:border-gray-400 shadow-sm" title="Reset view">⌂</button>
+    </div>
+  );
+
   if (court.isEndWallOnly) {
     const totalW = court.walls.end1.sections.reduce((s, sec) => s + sec.width, 0);
     return (
-      <svg ref={svgRef} className="w-full h-full select-none"
-        style={{ background: "#f8fafc", touchAction: "none", cursor: isPanning ? "grabbing" : "default" }}
-        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
-        <text x={totalW * SCALE / 2} y={SCALE * 0.5 - SCALE * 1.8} textAnchor="middle" fill="#6b7280"
-          fontSize={SCALE * 0.35} fontWeight="700" className="cursor-pointer" onClick={() => onSelectWall("end1")}>
-          End Wall · {totalW}m
-        </text>
-        {renderHWall("end1", 0, SCALE * 0.5)}
-      </svg>
+      <div className="w-full h-full relative">
+        <svg ref={svgRef} className="w-full h-full select-none"
+          style={{ background: "#f8fafc", touchAction: "none", cursor: isPanning ? "grabbing" : "grab" }}
+          viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+          onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
+          <text x={totalW * SCALE / 2} y={SCALE * 0.5 - SCALE * 1.8} textAnchor="middle" fill="#6b7280"
+            fontSize={SCALE * 0.35} fontWeight="700" className="cursor-pointer" onClick={() => onSelectWall("end1")}>
+            End Wall · {totalW}m
+          </text>
+          {renderHWall("end1", 0, SCALE * 0.5)}
+        </svg>
+        {zoomButtons}
+      </div>
     );
   }
 
@@ -1032,10 +1124,11 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
   const cornerOff = court.cornerType === "curved" ? CURVED_CORNER_SIZE * SCALE : 0;
 
   return (
-    <svg ref={svgRef} className="w-full h-full select-none"
-      style={{ background: "#f8fafc", touchAction: "none", cursor: isPanning ? "grabbing" : "default" }}
-      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-      onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
+    <div className="w-full h-full relative">
+      <svg ref={svgRef} className="w-full h-full select-none"
+        style={{ background: "#f8fafc", touchAction: "none", cursor: isPanning ? "grabbing" : "grab" }}
+        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
 
       {/* Court surface */}
       <rect x={-T * 0.5} y={-T * 0.5} width={W * SCALE + T} height={L * SCALE + T}
@@ -1098,6 +1191,8 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
         </>
       )}
     </svg>
+    {zoomButtons}
+    </div>
   );
 }
 
@@ -1105,10 +1200,34 @@ function PlanView2D({ court, selection, onSelectSection, onSelectWall }) {
 function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState(null);
+  const [panStart, setPanStart] = useState(null);
+
+  const handlePointerDown3D = (e) => {
+    if (e.target.dataset?.section) return;
+    setIsDragging(true); setDragStart({ x: e.clientX, y: e.clientY }); setPanStart(pan);
+  };
+  const handlePointerMove3D = (e) => {
+    if (!isDragging || !dragStart || !panStart) return;
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    setPan({ x: panStart.x + dx, y: panStart.y + dy });
+  };
+  const handlePointerUp3D = () => { setIsDragging(false); };
 
   const isSel = (wId, idx) =>
     (selection?.type === "section" && selection.wall === wId && selection.index === idx) ||
     (selection?.type === "wall" && selection.wall === wId);
+
+  // Helper to render 3D post
+  const renderPost3D = (key, toIso, x, y, h, ISO) => [
+    <line key={`${key}-l`} x1={toIso(x, y, 0).x} y1={toIso(x, y, 0).y} x2={toIso(x, y, h).x} y2={toIso(x, y, h).y}
+      stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />,
+    <circle key={`${key}-c`} cx={toIso(x, y, h).x} cy={toIso(x, y, h).y} r={Math.max(2, ISO * 0.09)}
+      fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />
+  ];
 
   if (court.isEndWallOnly) {
     // End wall 3D view - front-facing isometric of just the end wall
@@ -1117,7 +1236,7 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
     const baseISO = Math.min(14, 380 / Math.max(W, maxH * 2));
     const ISO = baseISO * zoom;
     const HH = ISO * 0.7;
-    const cx = 450, cy = 420;
+    const cx = 450 + pan.x, cy = 420 + pan.y;
 
     const toIso = (x, y, z = 0) => {
       const a = [{ ax: 1, ay: 1 }, { ax: -1, ay: 1 }, { ax: -1, ay: -1 }, { ax: 1, ay: -1 }][rotation];
@@ -1145,20 +1264,43 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
       const sel = isSel("end1", idx);
 
       if (section.type === "curvedCorner") {
-        // Simplified curved corner in 3D
+        // Curved corner in 3D: bezier curve sweeping from end wall into depth
+        const isLeft = idx === 0;
+        const cSize = section.width;
+        const curveSegs = 8;
+        const qbez3 = (a, ctrl, b, t) => {
+          const u = 1 - t;
+          return { x: u*u*a.x + 2*u*t*ctrl.x + t*t*b.x, y: u*u*a.y + 2*u*t*ctrl.y + t*t*b.y };
+        };
+        let cStart, cEnd, cCtrl;
+        if (isLeft) {
+          cStart = { x: cSize, y: 0 }; cEnd = { x: 0, y: cSize }; cCtrl = { x: 0, y: 0 };
+        } else {
+          cStart = { x: W - cSize, y: 0 }; cEnd = { x: W, y: cSize }; cCtrl = { x: W, y: 0 };
+        }
+        const getCurvePoint = (t) => qbez3(cStart, cCtrl, cEnd, t);
+
         for (let level = 0; level < h; level++) {
           const isBar = level === 0;
           let fillColor;
           if (sel) fillColor = SELECTED_OUTLINE;
           else if (isBar) fillColor = PANEL_BLUE;
           else fillColor = MESH_BLUE;
-          const pts = quad(x1, y1, x2, y2, level, level + 1);
-          elems.push(
-            <polygon key={`end1-${idx}-${level}`} points={pts} data-section="true"
-              fill={fillColor} stroke={sel ? "#b45309" : (isBar ? PANEL_BLUE_DARK : "#3555b8")}
-              strokeWidth={sel ? 2 : 0.5} opacity={0.88} className="cursor-pointer"
-              onClick={(e) => { e.stopPropagation(); onSelectSection("end1", idx); }} />
-          );
+
+          for (let s = 0; s < curveSegs; s++) {
+            const t1 = s / curveSegs, t2 = (s + 1) / curveSegs;
+            const cp1 = getCurvePoint(t1), cp2 = getCurvePoint(t2);
+            const pts = [
+              toIso(cp1.x, cp1.y, level), toIso(cp2.x, cp2.y, level),
+              toIso(cp2.x, cp2.y, level + 1), toIso(cp1.x, cp1.y, level + 1)
+            ].map(p => `${p.x},${p.y}`).join(" ");
+            elems.push(
+              <polygon key={`end1-${idx}-${level}-${s}`} points={pts} data-section="true"
+                fill={fillColor} stroke={sel ? "#b45309" : (isBar ? PANEL_BLUE_DARK : "#3555b8")}
+                strokeWidth={sel ? 2 : 0.5} opacity={0.88} className="cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); onSelectSection("end1", idx); }} />
+            );
+          }
         }
       } else if (section.type === "goal") {
         const pts = quad(x1, y1, x2, y2, 0, h);
@@ -1285,31 +1427,39 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
           }
         }
       }
-      // Posts
-      if (idx < wall.sections.length - 1 && section.type !== "goal" && wall.sections[idx + 1].type !== "goal") {
-        const pH = Math.max(section.height, wall.sections[idx + 1].height);
-        const pb = toIso(x2, y2, 0); const pt = toIso(x2, y2, pH);
-        elems.push(<line key={`end1-${idx}-3dp`} x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y} stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />);
-        elems.push(<circle key={`end1-${idx}-3dpt`} cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)} fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />);
+      // Posts between sections (goals act as posts)
+      if (idx < wall.sections.length - 1) {
+        const next = wall.sections[idx + 1];
+        if (section.type !== "curvedCorner" && next.type !== "curvedCorner" &&
+            section.type !== "goal" && next.type !== "goal") {
+          const pH = Math.max(section.height, next.height);
+          elems.push(...renderPost3D(`end1-${idx}-3dp`, toIso, x2, 0, pH, ISO));
+        }
       }
       offset += section.width;
     });
-    // End posts
+    // End posts (always - at outer edges)
     const firstSec = wall.sections[0], lastSec = wall.sections[wall.sections.length - 1];
-    if (firstSec.type !== "curvedCorner") {
-      const pb = toIso(0, 0, 0); const pt = toIso(0, 0, firstSec.height);
-      elems.push(<line key="end1-lp" x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y} stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />);
-      elems.push(<circle key="end1-lpt" cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)} fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />);
+    if (firstSec.type === "curvedCorner") {
+      // Post at the end of the curve (where side wall would start)
+      const cSize = firstSec.width;
+      elems.push(...renderPost3D("end1-lp", toIso, 0, cSize, firstSec.height, ISO));
+    } else {
+      elems.push(...renderPost3D("end1-lp", toIso, 0, 0, firstSec.height, ISO));
     }
-    if (lastSec.type !== "curvedCorner") {
-      const pb = toIso(W, 0, 0); const pt = toIso(W, 0, lastSec.height);
-      elems.push(<line key="end1-rp" x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y} stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />);
-      elems.push(<circle key="end1-rpt" cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)} fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />);
+    if (lastSec.type === "curvedCorner") {
+      const cSize = lastSec.width;
+      elems.push(...renderPost3D("end1-rp", toIso, W, cSize, lastSec.height, ISO));
+    } else {
+      elems.push(...renderPost3D("end1-rp", toIso, W, 0, lastSec.height, ISO));
     }
 
     return (
       <div className="w-full h-full relative" style={{ background: "#f1f5f9" }}>
-        <svg className="w-full h-full" viewBox="0 0 900 640">{elems}</svg>
+        <svg className="w-full h-full" viewBox="0 0 900 640"
+          style={{ touchAction: "none", cursor: isDragging ? "grabbing" : "grab" }}
+          onPointerDown={handlePointerDown3D} onPointerMove={handlePointerMove3D}
+          onPointerUp={handlePointerUp3D} onPointerLeave={handlePointerUp3D}>{elems}</svg>
         <div className="absolute top-3 right-3 flex gap-1">
           {["↗ NE", "↘ SE", "↙ SW", "↖ NW"].map((label, i) => (
             <button key={label} onClick={() => setRotation(i)}
@@ -1323,6 +1473,8 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
             className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">+</button>
           <button onClick={() => setZoom(z => Math.max(z - 0.2, 0.4))}
             className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">−</button>
+          <button onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }}
+            className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-500 text-xs flex items-center justify-center hover:border-gray-400 shadow-sm" title="Reset view">⌂</button>
         </div>
       </div>
     );
@@ -1333,7 +1485,7 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
   const baseISO = Math.min(14, 380 / Math.max(W, L));
   const ISO = baseISO * zoom;
   const HH = ISO * 0.7;
-  const cx = 450, cy = 320;
+  const cx = 450 + pan.x, cy = 320 + pan.y;
 
   const toIso = (x, y, z = 0) => {
     const a = [{ ax: 1, ay: 1 }, { ax: -1, ay: 1 }, { ax: -1, ay: -1 }, { ax: 1, ay: -1 }][rotation];
@@ -1692,19 +1844,23 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
         }
       }
 
-      // 3D Posts
-      if (idx < wall.sections.length - 1 && section.type !== "goal" && wall.sections[idx + 1].type !== "goal") {
-        const pH = Math.max(section.height, wall.sections[idx + 1].height);
-        const pb = toIso(x2, y2, 0);
-        const pt = toIso(x2, y2, pH);
-        elems.push(
-          <line key={`${wId}-${idx}-3dp`} x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y}
-            stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />
-        );
-        elems.push(
-          <circle key={`${wId}-${idx}-3dpt`} cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)}
-            fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />
-        );
+      // 3D Posts between sections (goals act as posts)
+      if (idx < wall.sections.length - 1) {
+        const next = wall.sections[idx + 1];
+        if (section.type !== "curvedCorner" && next.type !== "curvedCorner" &&
+            section.type !== "goal" && next.type !== "goal") {
+          const pH = Math.max(section.height, next.height);
+          const pb = toIso(x2, y2, 0);
+          const pt = toIso(x2, y2, pH);
+          elems.push(
+            <line key={`${wId}-${idx}-3dp`} x1={pb.x} y1={pb.y} x2={pt.x} y2={pt.y}
+              stroke={POST_GREY} strokeWidth={Math.max(2.5, ISO * 0.16)} strokeLinecap="round" />
+          );
+          elems.push(
+            <circle key={`${wId}-${idx}-3dpt`} cx={pt.x} cy={pt.y} r={Math.max(2, ISO * 0.09)}
+              fill={POST_GREY} stroke={POST_GREY_DARK} strokeWidth={0.5} />
+          );
+        }
       }
       offset += section.width;
     });
@@ -1759,7 +1915,10 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
 
   return (
     <div className="w-full h-full relative" style={{ background: "#f1f5f9" }}>
-      <svg className="w-full h-full" viewBox="0 0 900 640">{elems}</svg>
+      <svg className="w-full h-full" viewBox="0 0 900 640"
+        style={{ touchAction: "none", cursor: isDragging ? "grabbing" : "grab" }}
+        onPointerDown={handlePointerDown3D} onPointerMove={handlePointerMove3D}
+        onPointerUp={handlePointerUp3D} onPointerLeave={handlePointerUp3D}>{elems}</svg>
       <div className="absolute top-3 right-3 flex gap-1">
         {["↗ NE", "↘ SE", "↙ SW", "↖ NW"].map((label, i) => (
           <button key={label} onClick={() => setRotation(i)}
@@ -1773,6 +1932,8 @@ function IsometricView({ court, selection, onSelectSection, onSelectWall }) {
           className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">+</button>
         <button onClick={() => setZoom(z => Math.max(z - 0.2, 0.4))}
           className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-600 font-bold text-lg flex items-center justify-center hover:border-gray-400 shadow-sm">−</button>
+        <button onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }}
+          className="w-8 h-8 bg-white border border-gray-300 rounded-lg text-gray-500 text-xs flex items-center justify-center hover:border-gray-400 shadow-sm" title="Reset view">⌂</button>
       </div>
     </div>
   );
@@ -1872,6 +2033,7 @@ function Configurator({ court, setCourt, onBack }) {
     setCourt(prev => {
       const c = JSON.parse(JSON.stringify(prev));
       c.walls[wallId].sections[index].height = newHeight;
+      recalcArches(c);
       return c;
     });
   }, [setCourt]);
@@ -1911,16 +2073,41 @@ function Configurator({ court, setCourt, onBack }) {
     });
   }, [setCourt]);
 
+  const deleteSection = useCallback((wallId, index) => {
+    setCourt(prev => {
+      const c = JSON.parse(JSON.stringify(prev));
+      const wall = c.walls[wallId];
+      if (!wall || index < 0 || index >= wall.sections.length) return prev;
+      const section = wall.sections[index];
+      if (section.type === "goal") return prev; // never delete goal
+      wall.sections.splice(index, 1);
+      c.width = wall.sections.reduce((s, sec) => s + sec.width, 0);
+      recalcArches(c);
+      return c;
+    });
+    setSelection(null);
+  }, [setCourt]);
+
   const updateWallHeight = useCallback((wallId, newHeight) => {
     setCourt(prev => {
       const c = JSON.parse(JSON.stringify(prev));
-      c.walls[wallId].sections.forEach((s, idx) => {
+      // First pass: set all non-goal sections to new height
+      c.walls[wallId].sections.forEach((s) => {
         if (s.type === "goal") return;
         if (s.type === "curvedCorner") { s.height = newHeight; return; }
-        const secs = c.walls[wallId].sections;
+        s.height = newHeight;
+      });
+      // Recalculate arches (adds/removes based on height + adjacency)
+      recalcArches(c);
+      // Cap goal-adjacent panels WITHOUT arches at 3m
+      const secs = c.walls[wallId].sections;
+      secs.forEach((s, idx) => {
+        if (s.type === "goal" || s.type === "curvedCorner" || s.arch) return;
         const p = idx > 0 ? secs[idx - 1] : null;
         const n = idx < secs.length - 1 ? secs[idx + 1] : null;
-        s.height = (p?.type === "goal" || n?.type === "goal") ? Math.min(newHeight, 3) : newHeight;
+        if (p?.type === "goal" || n?.type === "goal") {
+          s.height = Math.min(s.height, 3);
+        }
       });
       return c;
     });
@@ -1933,6 +2120,7 @@ function Configurator({ court, setCourt, onBack }) {
       if (side === "left") wall.sections.unshift({ type: "panel", width, height });
       else wall.sections.push({ type: "panel", width, height });
       c.width = wall.sections.reduce((s, sec) => s + sec.width, 0);
+      recalcArches(c);
       return c;
     });
   }, [setCourt]);
@@ -2012,6 +2200,7 @@ function Configurator({ court, setCourt, onBack }) {
             <SectionEditor court={court} selection={selection}
               onUpdateHeight={updateSectionHeight} onToggleGate={toggleGate}
               onToggleChicane={toggleChicane} onToggleMiniGoal={toggleMiniGoal}
+              onDeleteSection={deleteSection}
               onUpdateWallHeight={updateWallHeight} onClose={clearSelection} />
           </div>
         )}
